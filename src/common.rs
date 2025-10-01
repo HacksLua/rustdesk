@@ -952,8 +952,8 @@ pub fn get_custom_rendezvous_server(custom: String) -> String {
     if !custom.is_empty() {
         return custom;
     }
-    if !config::PROD_RENDEZVOUS_SERVER.read().unwrap().is_empty() {
-        return config::PROD_RENDEZVOUS_SERVER.read().unwrap().clone();
+    if !config::PROD_RENDEZVOUS_SERVER_CONST.is_empty() {
+        return config::PROD_RENDEZVOUS_SERVER_CONST.to_string();
     }
     "".to_owned()
 }

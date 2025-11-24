@@ -1050,6 +1050,20 @@ fn get_subkey(name: &str, wow: bool) -> String {
 }
 
 fn get_valid_subkey() -> String {
+    if let Ok(current_exe) = std::env::current_exe() {
+        if let Some(exe_name) = current_exe.file_stem().and_then(|s| s.to_str()) {
+            let IS1 = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
+            let subkey = get_subkey(exe_name, false);
+            if !get_reg_of(&subkey, "InstallLocation").is_empty() {
+                return subkey;
+            }
+            let subkey = get_subkey(exe_name, true);
+            if !get_reg_of(&subkey, "InstallLocation").is_empty() {
+                return subkey;
+            }
+        }
+    }
+    let IS1 = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
     let subkey = get_subkey(IS1, false);
     if !get_reg_of(&subkey, "InstallLocation").is_empty() {
         return subkey;
@@ -1653,23 +1667,44 @@ pub fn add_recent_document(path: &str) {
 }
 
 pub fn is_installed() -> bool {
-    let (subkey, _, _, exe) = get_install_info();
-    // Check if the executable file exists
-    if !std::fs::metadata(&exe).is_ok() {
-        return false;
-    }
-    // Also check if there's a registry entry for installation (for MSI or regular install)
-    // This helps avoid false positives when the file exists but isn't properly installed
     let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-    if let Ok(uninstall_key) = hklm.open_subkey(subkey.replace("HKEY_LOCAL_MACHINE\\", "")) {
-        // If registry key exists and has DisplayName or UninstallString, it's installed
-        if uninstall_key.get_value::<String, _>("DisplayName").is_ok() 
-            || uninstall_key.get_value::<String, _>("UninstallString").is_ok() {
-            return true;
+    let uninstall_base = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
+    
+    // Try to find MSI installation with actual executable name
+    if let Ok(current_exe) = std::env::current_exe() {
+        if let Some(exe_name) = current_exe.file_stem().and_then(|s| s.to_str()) {
+            // Check if there's an MSI installation with the actual exe name
+            if let Ok(uninstall_key) = hklm.open_subkey(format!("{}\\{}", uninstall_base, exe_name)) {
+                if let Ok(installer) = uninstall_key.get_value::<u32, _>("WindowsInstaller") {
+                    if installer == 1 {
+                        // MSI installation found, check if exe exists
+                        if let Ok(install_location) = uninstall_key.get_value::<String, _>("InstallLocation") {
+                            let mut install_path = install_location.trim_end_matches('\\').to_string();
+                            if !install_path.is_empty() {
+                                let msi_exe = format!("{}\\{}.exe", install_path, exe_name);
+                                if std::fs::metadata(&msi_exe).is_ok() {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
-    // Fallback: if exe exists, consider it installed (for portable or custom installs)
-    true
+    let (subkey, _, _, exe) = get_install_info();
+    // Check if the executable file exists
+    if std::fs::metadata(&exe).is_ok() {
+
+        if let Ok(uninstall_key) = hklm.open_subkey(subkey.replace("HKEY_LOCAL_MACHINE\\", "")) {
+            if uninstall_key.get_value::<String, _>("DisplayName").is_ok() 
+                || uninstall_key.get_value::<String, _>("UninstallString").is_ok() {
+                return true;
+            }
+        }
+        return true;
+    }
+    false
 }
 
 pub fn get_reg(name: &str) -> String {

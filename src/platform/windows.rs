@@ -1290,13 +1290,19 @@ pub fn install_me(options: &str, path: String, silent: bool, debug: bool) -> Res
         version_build = versions[2];
     }
     let app_name = crate::get_app_name();
+    // Get the actual executable name from the path (e.g., "RustDesk.exe" -> "RustDesk")
+    let exe_name = std::path::Path::new(&exe)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(&app_name)
+        .to_string();
 
     let tmp_path = std::env::temp_dir().to_string_lossy().to_string();
     let mk_shortcut = write_cmds(
         format!(
             "
 Set oWS = WScript.CreateObject(\"WScript.Shell\")
-sLinkFile = \"{tmp_path}\\{app_name}.lnk\"
+sLinkFile = \"{tmp_path}\\{exe_name}.lnk\"
 
 Set oLink = oWS.CreateShortcut(sLinkFile)
     oLink.TargetPath = \"{exe}\"
@@ -1332,12 +1338,21 @@ oLink.Save
     let mut reg_value_desktop_shortcuts = "0".to_owned();
     let mut reg_value_start_menu_shortcuts = "0".to_owned();
     let mut reg_value_printer = "0".to_owned();
+    // Get the actual executable name from the path (e.g., "RustDesk.exe" -> "RustDesk")
+    let exe_name = std::path::Path::new(&exe)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(&app_name)
+        .to_string();
     let mut shortcuts = Default::default();
     if options.contains("desktopicon") {
+        // Remove old shortcuts with different names to avoid duplicates
         shortcuts = format!(
-            "copy /Y \"{}\\{}.lnk\" \"%PUBLIC%\\Desktop\\\"",
+            "if exist \"%PUBLIC%\\Desktop\\SRustDesk.lnk\" del /f /q \"%PUBLIC%\\Desktop\\SRustDesk.lnk\"
+if exist \"%PUBLIC%\\Desktop\\RustDesk.lnk\" del /f /q \"%PUBLIC%\\Desktop\\RustDesk.lnk\"
+copy /Y \"{}\\{}.lnk\" \"%PUBLIC%\\Desktop\\\"",
             tmp_path,
-            crate::get_app_name()
+            exe_name
         );
         reg_value_desktop_shortcuts = "1".to_owned();
     }
@@ -1345,7 +1360,7 @@ oLink.Save
         shortcuts = format!(
             "{shortcuts}
 md \"{start_menu}\"
-copy /Y \"{tmp_path}\\{app_name}.lnk\" \"{start_menu}\\\"
+copy /Y \"{tmp_path}\\{exe_name}.lnk\" \"{start_menu}\\\"
 copy /Y \"{tmp_path}\\Uninstall {app_name}.lnk\" \"{start_menu}\\\"
      "
         );
@@ -1367,7 +1382,7 @@ copy /Y \"{tmp_path}\\Uninstall {app_name}.lnk\" \"{start_menu}\\\"
 if exist \"{mk_shortcut}\" del /f /q \"{mk_shortcut}\"
 if exist \"{uninstall_shortcut}\" del /f /q \"{uninstall_shortcut}\"
 if exist \"{tray_shortcut}\" del /f /q \"{tray_shortcut}\"
-if exist \"{tmp_path}\\{app_name}.lnk\" del /f /q \"{tmp_path}\\{app_name}.lnk\"
+if exist \"{tmp_path}\\{exe_name}.lnk\" del /f /q \"{tmp_path}\\{exe_name}.lnk\"
 if exist \"{tmp_path}\\Uninstall {app_name}.lnk\" del /f /q \"{tmp_path}\\Uninstall {app_name}.lnk\"
 if exist \"{tmp_path}\\{app_name} Tray.lnk\" del /f /q \"{tmp_path}\\{app_name} Tray.lnk\"
         "
@@ -1510,6 +1525,8 @@ fn get_uninstall(kill_self: bool) -> String {
     if exist \"{path}\" rd /s /q \"{path}\"
     if exist \"{start_menu}\" rd /s /q \"{start_menu}\"
     if exist \"%PUBLIC%\\Desktop\\{app_name}.lnk\" del /f /q \"%PUBLIC%\\Desktop\\{app_name}.lnk\"
+    if exist \"%PUBLIC%\\Desktop\\RustDesk.lnk\" del /f /q \"%PUBLIC%\\Desktop\\RustDesk.lnk\"
+    if exist \"%PUBLIC%\\Desktop\\SRustDesk.lnk\" del /f /q \"%PUBLIC%\\Desktop\\SRustDesk.lnk\"
     if exist \"%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\{app_name} Tray.lnk\" del /f /q \"%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\{app_name} Tray.lnk\"
     ",
         before_uninstall=get_before_uninstall(kill_self),
@@ -1636,8 +1653,23 @@ pub fn add_recent_document(path: &str) {
 }
 
 pub fn is_installed() -> bool {
-    let (_, _, _, exe) = get_install_info();
-    std::fs::metadata(exe).is_ok()
+    let (subkey, _, _, exe) = get_install_info();
+    // Check if the executable file exists
+    if !std::fs::metadata(&exe).is_ok() {
+        return false;
+    }
+    // Also check if there's a registry entry for installation (for MSI or regular install)
+    // This helps avoid false positives when the file exists but isn't properly installed
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+    if let Ok(uninstall_key) = hklm.open_subkey(subkey.replace("HKEY_LOCAL_MACHINE\\", "")) {
+        // If registry key exists and has DisplayName or UninstallString, it's installed
+        if uninstall_key.get_value::<String, _>("DisplayName").is_ok() 
+            || uninstall_key.get_value::<String, _>("UninstallString").is_ok() {
+            return true;
+        }
+    }
+    // Fallback: if exe exists, consider it installed (for portable or custom installs)
+    true
 }
 
 pub fn get_reg(name: &str) -> String {

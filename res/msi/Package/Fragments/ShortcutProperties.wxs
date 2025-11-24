@@ -12,7 +12,7 @@
 				 They should not be set directly from the command line or registry, instead the CREATE* properties
 				 below should be set, then they will update these properties with their values only if set. -->
 		<Property Id="STARTMENUSHORTCUTS" Value="1" Secure="yes"></Property>
-		<Property Id="DESKTOPSHORTCUTS" Value="1" Secure="yes"></Property>
+		<Property Id="DESKTOPSHORTCUTS" Value="0" Secure="yes"></Property>
 		<Property Id="STARTUPSHORTCUTS" Value="1" Secure="yes"></Property>
 		<Property Id="PRINTER" Value="1" Secure="yes"></Property>
 

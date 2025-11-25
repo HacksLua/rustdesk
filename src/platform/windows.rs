@@ -1052,7 +1052,6 @@ fn get_subkey(name: &str, wow: bool) -> String {
 fn get_valid_subkey() -> String {
     if let Ok(current_exe) = std::env::current_exe() {
         if let Some(exe_name) = current_exe.file_stem().and_then(|s| s.to_str()) {
-            let IS1 = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
             let subkey = get_subkey(exe_name, false);
             if !get_reg_of(&subkey, "InstallLocation").is_empty() {
                 return subkey;
@@ -1063,7 +1062,6 @@ fn get_valid_subkey() -> String {
             }
         }
     }
-    let IS1 = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
     let subkey = get_subkey(IS1, false);
     if !get_reg_of(&subkey, "InstallLocation").is_empty() {
         return subkey;
